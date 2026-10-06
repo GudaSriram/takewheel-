@@ -1,0 +1,48 @@
+name: Build Takewheel for GPT Sites
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: takewheel-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --include=dev --include=optional --no-audit --no-fund
+      - name: Check types
+        run: npx --no-install tsc --noEmit
+      - name: Build Worker and browser assets
+        run: npm run build
+      - name: Verify build outputs
+        run: |
+          test -s dist/server/index.js
+          test -s dist/server/wrangler.json
+          test -s dist/.openai/hosting.json
+          test -s dist/.openai/drizzle/0000_bookings.sql
+          test -d dist/client
+      - name: Record source revision
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: printf '%s\n' "$SOURCE_SHA" > source-commit.txt
+      - name: Save build for GPT Sites publishing
+        uses: actions/upload-artifact@v4
+        with:
+          name: takewheel-sites-build-${{ github.sha }}
+          path: |
+            dist/
+            source-commit.txt
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
